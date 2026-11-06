@@ -54,7 +54,45 @@ def run_monitor(name, script):
         return False
 
 
-def build_report(results):
+def run_health_check(results):
+    print("\nRunning server health check...")
+
+    required = ["CPU", "RAM", "DISK"]
+
+    if not all(results.get(name, False) for name in required):
+        message = (
+            "OVERALL SERVER HEALTH: UNKNOWN\n"
+            "Health check skipped because a resource monitor failed."
+        )
+        print(message)
+        return message
+
+    try:
+        result = subprocess.run(
+            [sys.executable, str(PROJECT_DIR / "health_check.py")],
+            cwd=PROJECT_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False
+        )
+
+        if result.returncode == 0:
+            print(result.stdout)
+            return result.stdout
+
+        message = "OVERALL SERVER HEALTH: UNKNOWN\nHealth checker failed."
+        print(message)
+        print(result.stderr)
+        return message
+
+    except (subprocess.TimeoutExpired, OSError) as error:
+        message = f"OVERALL SERVER HEALTH: UNKNOWN\nHealth check error: {error}"
+        print(message)
+        return message
+
+
+def build_report(results, health_report):
     timestamp = datetime.now().isoformat(timespec="seconds")
 
     lines = [
@@ -81,6 +119,11 @@ def build_report(results):
             lines.append("Report file not found.")
 
     lines.append("\n" + "=" * 50)
+    lines.append("SERVER HEALTH CHECK")
+    lines.append("=" * 50)
+    lines.append(health_report)
+
+    lines.append("\n" + "=" * 50)
     lines.append("MONITORING RESULTS")
 
     for name, success in results.items():
@@ -103,7 +146,9 @@ def main():
     for name, script in MONITORS:
         results[name] = run_monitor(name, script)
 
-    report = build_report(results)
+    health_report = run_health_check(results)
+
+    report = build_report(results, health_report)
 
     print("\n" + report)
 
